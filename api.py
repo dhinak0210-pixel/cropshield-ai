@@ -24,17 +24,23 @@ Usage Examples:
 """
 
 import os
-# Keras 3 compatibility patch for legacy Keras 2 BatchNormalization parameters
+# Keras 3 compatibility patch for legacy Keras 2 parameters (renorm, quantization_config, etc.)
 try:
     import tensorflow as tf
-    from tensorflow.keras.layers import BatchNormalization
-    original_bn_init = BatchNormalization.__init__
-    def patched_bn_init(self, *args, **kwargs):
-        kwargs.pop('renorm', None)
-        kwargs.pop('renorm_clipping', None)
-        kwargs.pop('renorm_momentum', None)
-        original_bn_init(self, *args, **kwargs)
-    BatchNormalization.__init__ = patched_bn_init
+    from tensorflow.keras.layers import BatchNormalization, Dense, Conv2D, DepthwiseConv2D
+
+    def patch_layer_init(layer_class, keys_to_remove):
+        original_init = layer_class.__init__
+        def patched_init(self, *args, **kwargs):
+            for key in keys_to_remove:
+                kwargs.pop(key, None)
+            original_init(self, *args, **kwargs)
+        layer_class.__init__ = patched_init
+
+    patch_layer_init(BatchNormalization, ['renorm', 'renorm_clipping', 'renorm_momentum', 'quantization_config'])
+    patch_layer_init(Dense, ['quantization_config'])
+    patch_layer_init(Conv2D, ['quantization_config'])
+    patch_layer_init(DepthwiseConv2D, ['quantization_config'])
 except Exception:
     pass
 
