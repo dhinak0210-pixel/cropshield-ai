@@ -120,7 +120,22 @@ st.markdown("""
 # ─── LOAD RESOURCES ──────────────────────────
 @st.cache_resource
 def load_model():
-    """Load disease detection model, checking multiple paths and falling back if needed."""
+    """Load disease detection model, downloading via huggingface_hub if missing or an LFS pointer."""
+    # Try downloading using huggingface_hub first for container environment robustness
+    try:
+        from huggingface_hub import hf_hub_download
+        # We download models/export/model.h5
+        path = hf_hub_download(
+            repo_id="dhina4213/cropshield-ai",
+            filename="models/export/model.h5",
+            repo_type="space"
+        )
+        if os.path.exists(path) and os.path.getsize(path) > 1000000:
+            model = tf.keras.models.load_model(path)
+            return model, path
+    except Exception as e:
+        st.warning(f"Could not download model from Hugging Face Space: {e}. Trying local fallback...")
+
     potential_paths = [
         "models/export/model.h5",
         "models/mobilenetv2_final_best.h5",
@@ -129,7 +144,7 @@ def load_model():
         "model/plant_disease_model.h5"
     ]
     for path in potential_paths:
-        if os.path.exists(path) and os.path.getsize(path) > 1000:
+        if os.path.exists(path) and os.path.getsize(path) > 1000000:
             try:
                 model = tf.keras.models.load_model(path)
                 return model, path
@@ -211,16 +226,6 @@ if "disease_context" not in st.session_state:
     st.session_state.disease_context = {}
 if "prediction_done" not in st.session_state:
     st.session_state.prediction_done = False
-
-# Diagnostics sidebar printout
-st.sidebar.write("### Diagnostics")
-st.sidebar.write(f"CWD: {os.getcwd()}")
-if os.path.exists("models"):
-    st.sidebar.write(f"models/: {os.listdir('models')}")
-    if os.path.exists("models/export"):
-        st.sidebar.write(f"models/export/: {os.listdir('models/export')}")
-else:
-    st.sidebar.write("models/ folder missing!")
 
 # Load resources at startup to populate sidebar correctly
 model_res = load_model()
