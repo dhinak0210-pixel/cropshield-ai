@@ -24,7 +24,20 @@ Usage Examples:
 """
 
 import os
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
+# Keras 3 compatibility patch for legacy Keras 2 BatchNormalization parameters
+try:
+    import tensorflow as tf
+    from tensorflow.keras.layers import BatchNormalization
+    original_bn_init = BatchNormalization.__init__
+    def patched_bn_init(self, *args, **kwargs):
+        kwargs.pop('renorm', None)
+        kwargs.pop('renorm_clipping', None)
+        kwargs.pop('renorm_momentum', None)
+        original_bn_init(self, *args, **kwargs)
+    BatchNormalization.__init__ = patched_bn_init
+except Exception:
+    pass
+
 import io
 import time
 import re
