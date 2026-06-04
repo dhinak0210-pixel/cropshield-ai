@@ -212,6 +212,16 @@ if "disease_context" not in st.session_state:
 if "prediction_done" not in st.session_state:
     st.session_state.prediction_done = False
 
+# Diagnostics sidebar printout
+st.sidebar.write("### Diagnostics")
+st.sidebar.write(f"CWD: {os.getcwd()}")
+if os.path.exists("models"):
+    st.sidebar.write(f"models/: {os.listdir('models')}")
+    if os.path.exists("models/export"):
+        st.sidebar.write(f"models/export/: {os.listdir('models/export')}")
+else:
+    st.sidebar.write("models/ folder missing!")
+
 # Load resources at startup to populate sidebar correctly
 model_res = load_model()
 model, model_path = model_res if model_res else (None, None)
