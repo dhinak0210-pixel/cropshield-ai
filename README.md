@@ -3,7 +3,7 @@ title: Cropshield AI
 emoji: 🌿
 colorFrom: green
 colorTo: green
-sdk: streamlit
+sdk: docker
 sdk_version: 1.34.0
 app_file: app.py
 pinned: false
