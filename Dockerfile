@@ -24,6 +24,7 @@ COPY . /app/
 # Set environment variables for configurations
 ENV HOST=0.0.0.0
 ENV PORT=7860
+ENV TF_USE_LEGACY_KERAS=1
 
 # Expose port
 EXPOSE 7860
