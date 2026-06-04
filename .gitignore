@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Model files
+**/*.h5
+**/*.keras
+**/*.tflite
+models/export/saved_model/
+models/variables/
+*.pt
+*.pth
+
+# Dataset
+data/
+PlantVillage/
+*.zip
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Extra training, evaluation, and test directories to ignore
+eda_plots/
+evaluation_results/
+evaluation_temp/
+plant-disease-detection/
+tests/
+logs/
+
+# Extra research/training script files to ignore
+eda.ipynb
+eda_analysis.py
+setup_dataset.py
+train.py
+train_advanced.py
+evaluate.py
+generate_notebook.py
+test_diseased_leaf.png
+model_builder.png
+cropshield_banner.png
+
