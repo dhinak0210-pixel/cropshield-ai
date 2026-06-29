@@ -19,3 +19,6 @@ python-multipart>=0.0.6
 httpx>=0.24.1
 huggingface-hub>=0.20.0
 fpdf2
+torch
+torchvision
+git+https://github.com/openai/CLIP.git
