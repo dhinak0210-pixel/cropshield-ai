@@ -1,4 +1,15 @@
+---
+title: CropShield AI
+emoji: 🌿
+colorFrom: green
+colorTo: green
+sdk: streamlit
+app_file: app.py
+pinned: false
+---
+
 # CropShield AI — Enterprise Pathogen Intelligence
+
 
 <div align="center">
   <p><strong>A production-ready deep learning platform for real-time agricultural pathology diagnostics and explainable agronomic advisory.</strong></p>
