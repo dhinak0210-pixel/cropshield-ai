@@ -636,12 +636,14 @@ def run_clip_inference(image: Image.Image) -> dict:
         tmp_path = tmp.name
 
     try:
-        # Resolve python path from virtual env or fallback to current python
-        python_exe = os.path.join("venv", "bin", "python")
+        # Resolve absolute paths from repository root
+        repo_root = os.path.dirname(os.path.abspath(__file__))
+        python_exe = os.path.join(repo_root, "venv", "bin", "python")
         if not os.path.exists(python_exe):
             python_exe = sys.executable
             
-        cmd = [python_exe, "clip_disease_detector.py", "--image", tmp_path]
+        script_path = os.path.join(repo_root, "clip_disease_detector.py")
+        cmd = [python_exe, script_path, "--image", tmp_path]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         
         # Parse output JSON
