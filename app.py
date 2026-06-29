@@ -1031,7 +1031,96 @@ elif "selected_test_leaf" in st.session_state and st.session_state.selected_test
 
 # ─── PREDICTION + AI ANALYSIS ────────────────
 if image is not None:
+    # 1. Run prediction first to compute classes and attention maps
+    with st.spinner("Analyzing specimen..."):
+        if model_engine == "Zero-Shot CLIP Model (Experimental)":
+            try:
+                # Run CLIP zero-shot inference
+                clip_res = run_clip_inference(image)
+                if not clip_res.get("success", False):
+                    raise ValueError(clip_res.get("error", "Unknown CLIP error"))
+                
+                class_name = clip_res["top_prediction"]["disease"]
+                confidence = clip_res["top_prediction"]["confidence"]
+                
+                top5 = [
+                    {
+                        "class": pred["disease"],
+                        "confidence": pred["confidence"]
+                    }
+                    for pred in clip_res["top_k_predictions"]
+                ]
+            except Exception as e:
+                st.error(f"❌ CLIP Prediction Error: {e}")
+                st.stop()
+        elif model_engine == "PathogenIQ™ Neural Precision Engine":
+            try:
+                res = run_fast_cpu_inference(image)
+                class_name = res["class_name"]
+                confidence = res["confidence"]
+                top5 = res["top5"]
+            except Exception as e:
+                st.error(f"❌ PathogenIQ™ Inference Error: {e}")
+                st.stop()
+        else:
+            try:
+                from utils.preprocess import preprocess_image
+                target_size = get_model_target_size(model)
+                batch_img, original_resized = preprocess_image(image, target_size=target_size, validate_leaf=True)
+                
+                # Perform prediction using processed image
+                predictions = model.predict(batch_img, verbose=0)
+                pred_idx    = np.argmax(predictions[0])
+                confidence  = float(predictions[0][pred_idx]) * 100
+                class_name  = class_indices.get(str(pred_idx), "Unknown")
 
+                # Top 5
+                top5_idx = np.argsort(predictions[0])[-5:][::-1]
+                top5 = [
+                    {
+                        "class"     : class_indices.get(str(i), "Unknown"),
+                        "confidence": float(predictions[0][i]) * 100
+                    }
+                    for i in top5_idx
+                ]
+            except ValueError as e:
+                err_msg = str(e)
+                if "Leaf" in err_msg:
+                    st.error("❌ Invalid Specimen Image!")
+                else:
+                    st.error("❌ Image Quality Check Failed!")
+                st.warning(err_msg)
+                st.info("Tip: Ensure your photo is sharp, well-lit, and contains a clear view of a plant leaf.")
+                st.stop()
+            except Exception as e:
+                st.error(f"❌ Prediction Error: {e}")
+                st.stop()
+
+    # Parse class name
+    if " - " in class_name:
+        parts = class_name.split(" - ")
+        plant_name = parts[0]
+        disease = parts[1] if len(parts) > 1 else "Unknown"
+    else:
+        parts      = class_name.split("___")
+        plant_name = parts[0].replace("_", " ")
+        disease    = (parts[1].replace("_", " ")
+                      if len(parts) > 1 else "Unknown")
+    severity   = get_severity(class_name)
+    is_healthy = "healthy" in class_name.lower()
+
+    # Save to session state
+    st.session_state.disease_context = {
+        "plant"     : plant_name,
+        "disease"   : disease,
+        "class_name": class_name,
+        "confidence": confidence,
+        "severity"  : severity,
+        "is_healthy": is_healthy
+    }
+    st.session_state.prediction_done = True
+
+    # 2. Render UI Layout Columns
     img_col, result_col = st.columns([1, 1])
 
     with img_col:
@@ -1044,8 +1133,17 @@ if image is not None:
             st.caption(f"Size: {w}×{h} pixels")
             
         with img_tabs[1]:
-            if model_engine in ["Zero-Shot CLIP Model (Experimental)", "PathogenIQ™ Neural Precision Engine"]:
-                st.info("Grad-CAM Visual Attention is available when a Keras backbone model is loaded alongside the PathogenIQ™ engine.")
+            if model_engine == "Zero-Shot CLIP Model (Experimental)":
+                st.info("Grad-CAM Visual Attention is available when a Keras backbone model or the PathogenIQ™ engine is loaded.")
+            elif model_engine == "PathogenIQ™ Neural Precision Engine":
+                with st.spinner("Generating attention map..."):
+                    from utils.gradcam import generate_pathogeniq_gradcam
+                    gradcam_res = generate_pathogeniq_gradcam(image, class_name)
+                    if gradcam_res["success"]:
+                        st.image(gradcam_res["overlay"], use_column_width=True)
+                        st.caption("The colored areas indicate where the deep learning network focused its attention to make the diagnosis (Red/Yellow = High Focus, Blue = Low Focus).")
+                    else:
+                        st.error(f"Could not generate attention map: {gradcam_res['error_message']}")
             else:
                 # Generate and show Grad-CAM attention heatmap overlay
                 with st.spinner("Generating attention map..."):
@@ -1060,95 +1158,6 @@ if image is not None:
 
     with result_col:
         st.markdown("### Neural Diagnosis")
-
-        # Run prediction
-        with st.spinner("Analyzing specimen..."):
-            if model_engine == "Zero-Shot CLIP Model (Experimental)":
-                try:
-                    # Run CLIP zero-shot inference
-                    clip_res = run_clip_inference(image)
-                    if not clip_res.get("success", False):
-                        raise ValueError(clip_res.get("error", "Unknown CLIP error"))
-                    
-                    class_name = clip_res["top_prediction"]["disease"]
-                    confidence = clip_res["top_prediction"]["confidence"]
-                    
-                    top5 = [
-                        {
-                            "class": pred["disease"],
-                            "confidence": pred["confidence"]
-                        }
-                        for pred in clip_res["top_k_predictions"]
-                    ]
-                except Exception as e:
-                    st.error(f"❌ CLIP Prediction Error: {e}")
-                    st.stop()
-            elif model_engine == "PathogenIQ™ Neural Precision Engine":
-                try:
-                    res = run_fast_cpu_inference(image)
-                    class_name = res["class_name"]
-                    confidence = res["confidence"]
-                    top5 = res["top5"]
-                except Exception as e:
-                    st.error(f"❌ PathogenIQ™ Inference Error: {e}")
-                    st.stop()
-            else:
-                try:
-                    from utils.preprocess import preprocess_image
-                    target_size = get_model_target_size(model)
-                    batch_img, original_resized = preprocess_image(image, target_size=target_size, validate_leaf=True)
-                    
-                    # Perform prediction using processed image
-                    predictions = model.predict(batch_img, verbose=0)
-                    pred_idx    = np.argmax(predictions[0])
-                    confidence  = float(predictions[0][pred_idx]) * 100
-                    class_name  = class_indices.get(str(pred_idx), "Unknown")
-
-                    # Top 5
-                    top5_idx = np.argsort(predictions[0])[-5:][::-1]
-                    top5 = [
-                        {
-                            "class"     : class_indices.get(str(i), "Unknown"),
-                            "confidence": float(predictions[0][i]) * 100
-                        }
-                        for i in top5_idx
-                    ]
-                except ValueError as e:
-                    err_msg = str(e)
-                    if "Leaf" in err_msg:
-                        st.error("❌ Invalid Specimen Image!")
-                    else:
-                        st.error("❌ Image Quality Check Failed!")
-                    st.warning(err_msg)
-                    st.info("Tip: Ensure your photo is sharp, well-lit, and contains a clear view of a plant leaf.")
-                    st.stop()
-                except Exception as e:
-                    st.error(f"❌ Prediction Error: {e}")
-                    st.stop()
-
-        # Parse class name
-        if " - " in class_name:
-            parts = class_name.split(" - ")
-            plant_name = parts[0]
-            disease = parts[1] if len(parts) > 1 else "Unknown"
-        else:
-            parts      = class_name.split("___")
-            plant_name = parts[0].replace("_", " ")
-            disease    = (parts[1].replace("_", " ")
-                          if len(parts) > 1 else "Unknown")
-        severity   = get_severity(class_name)
-        is_healthy = "healthy" in class_name.lower()
-
-        # Save to session state
-        st.session_state.disease_context = {
-            "plant"     : plant_name,
-            "disease"   : disease,
-            "class_name": class_name,
-            "confidence": confidence,
-            "severity"  : severity,
-            "is_healthy": is_healthy
-        }
-        st.session_state.prediction_done = True
 
         # Show result
         if is_healthy:

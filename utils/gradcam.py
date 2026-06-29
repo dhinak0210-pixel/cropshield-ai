@@ -281,3 +281,117 @@ def display_gradcam(img_array: np.ndarray, heatmap: np.ndarray, alpha: float = 0
     """
     pil_img = overlay_heatmap_on_image(img_array, heatmap, alpha)
     return np.array(pil_img)
+
+
+def generate_pathogeniq_gradcam(original_image: Image.Image, predicted_class_name: str, model_path: str = "models/fast_cpu_model.pkl") -> Dict[str, Any]:
+    """
+    Generates a Grad-CAM heatmap for the PathogenIQ™ engine using the Logistic Regression
+    coefficients as exact channel attention weights on MobileNetV2's out_relu activations.
+    """
+    import pickle
+    import os
+    
+    result = {
+        "overlay": None,
+        "success": False,
+        "error_message": ""
+    }
+    
+    try:
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"PathogenIQ™ model checkpoint not found at {model_path}")
+            
+        with open(model_path, "rb") as f:
+            payload = pickle.load(f)
+            
+        extractor_type = payload.get("extractor_type", "")
+        if extractor_type != "mobilenetv2":
+            raise ValueError("Grad-CAM is only supported when using the MobileNetV2 backbone.")
+            
+        classifier = payload["classifier"]
+        idx_to_class = payload["idx_to_class"]
+        
+        # Find class index
+        class_idx = None
+        for idx, name in idx_to_class.items():
+            if name == predicted_class_name:
+                class_idx = int(idx)
+                break
+                
+        if class_idx is None:
+            # Fallback 1: search case-insensitive substring
+            for idx, name in idx_to_class.items():
+                if name.lower() in predicted_class_name.lower() or predicted_class_name.lower() in name.lower():
+                    class_idx = int(idx)
+                    break
+                    
+        if class_idx is None:
+            # Fallback 2: search normalized alphanumeric similarity
+            def normalize_str(s):
+                import re
+                return re.sub(r'[^a-z0-9]', '', s.lower())
+                
+            norm_predicted = normalize_str(predicted_class_name)
+            for idx, name in idx_to_class.items():
+                if normalize_str(name) in norm_predicted or norm_predicted in normalize_str(name):
+                    class_idx = int(idx)
+                    break
+                    
+        if class_idx is None:
+            raise ValueError(f"Class '{predicted_class_name}' not found in model indices.")
+            
+        # Get coefficients (weights)
+        if hasattr(classifier, "coef_"):
+            coef = classifier.coef_
+            if coef.ndim == 1:
+                # Binary classification
+                weights = coef if class_idx == 1 else -coef
+            else:
+                weights = coef[class_idx]
+        else:
+            raise ValueError("Classifier does not have coefficients (coef_ attribute).")
+            
+        # Load pre-trained extractor base model without pooling
+        base_model = tf.keras.applications.MobileNetV2(
+            weights='imagenet',
+            include_top=False,
+            pooling=None,
+            input_shape=(224, 224, 3)
+        )
+        
+        out_relu = base_model.get_layer('out_relu')
+        grad_model = tf.keras.models.Model(inputs=base_model.inputs, outputs=out_relu.output)
+        
+        # Preprocess image
+        img_resized = original_image.resize((224, 224))
+        img_arr = np.array(img_resized, dtype=np.float32)
+        img_arr = (img_arr / 127.5) - 1.0
+        img_arr = np.expand_dims(img_arr, axis=0)
+        
+        # Get activation maps
+        conv_outputs = grad_model.predict(img_arr, verbose=0)[0] # Shape: (7, 7, 1280)
+        
+        # Compute exact weighted average of activation maps
+        # conv_outputs has shape (7, 7, 1280), weights has shape (1280,)
+        heatmap = np.dot(conv_outputs, weights) # Shape: (7, 7)
+        
+        # Apply ReLU
+        heatmap = np.maximum(heatmap, 0.0)
+        max_val = np.max(heatmap)
+        if max_val == 0:
+            max_val = 1e-10
+        heatmap = heatmap / max_val
+        
+        # Resize original image for blending
+        orig_array = np.array(original_image.resize((224, 224)))
+        
+        # Overlay heatmap
+        overlay_img = overlay_heatmap_on_image(orig_array, heatmap)
+        
+        result["overlay"] = overlay_img
+        result["success"] = True
+        
+    except Exception as e:
+        result["error_message"] = str(e)
+        
+    return result
