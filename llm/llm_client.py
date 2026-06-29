@@ -84,22 +84,17 @@ class LLMClient:
             raise ImportError("Run: pip install groq")
 
     def _setup_gemini(self):
-        """Setup Gemini client (best for images)"""
+        """Setup Gemini client using the new google-genai SDK."""
         try:
-            import google.generativeai as genai
+            from google import genai
             api_key = os.getenv("GEMINI_API_KEY")
             if not api_key or api_key == "your_gemini_api_key_here":
-                raise ValueError(
-                    "GEMINI_API_KEY not found in .env"
-                )
-            genai.configure(api_key=api_key)
+                raise ValueError("GEMINI_API_KEY not found in .env")
+            self.client = genai.Client(api_key=api_key)
             self.model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-            self.client = genai.GenerativeModel(self.model)
             print(f"✅ Gemini client ready: {self.model}")
         except ImportError:
-            raise ImportError(
-                "Run: pip install google-generativeai"
-            )
+            raise ImportError("Run: pip install google-genai")
 
     def _setup_ollama(self):
         """Setup Ollama (local, no internet needed)"""
@@ -200,19 +195,21 @@ class LLMClient:
         self, prompt, system_prompt,
         temperature, max_tokens
     ) -> str:
-        """Generate using Gemini API"""
+        """Generate using Gemini API (google-genai SDK)."""
+        from google.genai import types
 
         full_prompt = ""
         if system_prompt:
             full_prompt = f"{system_prompt}\n\n"
         full_prompt += prompt
 
-        response = self.client.generate_content(
-            full_prompt,
-            generation_config={
-                "temperature" : temperature,
-                "max_output_tokens": max_tokens
-            }
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=full_prompt,
+            config=types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+            )
         )
         return response.text
 
@@ -263,17 +260,15 @@ class LLMClient:
 # ─── GEMINI VISION CLIENT ────────────────────
 class GeminiVisionClient:
     """
-    Use Gemini to analyze plant disease images directly
-    Gemini can SEE the image and describe what it finds
+    Use Gemini to visually analyze plant disease images.
+    Uses the new google-genai SDK to avoid protobuf conflicts.
     """
 
     def __init__(self):
-        import google.generativeai as genai
+        from google import genai
         api_key = os.getenv("GEMINI_API_KEY")
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(
-            os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-        )
+        self._client = genai.Client(api_key=api_key)
+        self._model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         print("✅ Gemini Vision client ready")
 
     def analyze_plant_image(
@@ -283,34 +278,43 @@ class GeminiVisionClient:
         confidence: float
     ) -> str:
         """
-        Let Gemini visually analyze the plant image
-        
-        Returns detailed visual analysis
+        Let Gemini visually analyze the plant image.
+        Returns detailed visual analysis.
         """
-        from PIL import Image
+        import base64
+        from google.genai import types
 
-        img = Image.open(image_path)
+        with open(image_path, "rb") as f:
+            img_bytes = f.read()
 
-        prompt = f"""
-        You are an expert plant pathologist.
-        
-        This image shows a plant leaf. My AI model detected:
-        Disease: {predicted_disease}
-        Confidence: {confidence:.1f}%
-        
-        Please analyze this image and provide:
-        1. Visual confirmation of what you see
-        2. Specific symptoms visible in the image
-        3. Disease stage assessment (early/mid/late)
-        4. Any other issues you notice
-        5. Confidence in the diagnosis
-        
-        Be specific about what you see in the image.
-        Keep response under 200 words.
-        """
+        # Detect mime type
+        ext = image_path.lower().rsplit(".", 1)[-1]
+        mime_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
+                    "png": "image/png", "webp": "image/webp"}
+        mime_type = mime_map.get(ext, "image/jpeg")
 
-        response = self.model.generate_content(
-            [prompt, img]
+        prompt = f"""You are an expert plant pathologist.
+
+This image shows a plant leaf. My AI model detected:
+Disease: {predicted_disease}
+Confidence: {confidence:.1f}%
+
+Please analyze this image and provide:
+1. Visual confirmation of what you see
+2. Specific symptoms visible in the image
+3. Disease stage assessment (early/mid/late)
+4. Any other issues you notice
+5. Confidence in the diagnosis
+
+Be specific about what you see in the image.
+Keep response under 200 words."""
+
+        response = self._client.models.generate_content(
+            model=self._model_name,
+            contents=[
+                types.Part.from_bytes(data=img_bytes, mime_type=mime_type),
+                prompt,
+            ],
         )
         return response.text
 
@@ -352,12 +356,11 @@ class GeminiClient:
         self.llm_client = get_llm_client()
         if api_key or (model_name and model_name != "gemini-2.5-flash"):
             try:
+                from google import genai
                 self.llm_client = LLMClient("gemini")
-                if api_key:
-                    import google.generativeai as genai
-                    genai.configure(api_key=api_key)
-                    self.llm_client.client = genai.GenerativeModel(model_name)
-                    self.llm_client.model = model_name
+                _api_key = api_key or os.getenv("GEMINI_API_KEY", "")
+                self.llm_client.client = genai.Client(api_key=_api_key)
+                self.llm_client.model = model_name
             except Exception as e:
                 logger.warning(f"Failed to force custom Gemini client: {e}")
 
