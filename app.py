@@ -645,7 +645,10 @@ def run_clip_inference(image: Image.Image) -> dict:
             
         script_path = os.path.join(repo_root, "clip_disease_detector.py")
         cmd = [python_exe, script_path, "--image", tmp_path]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Subprocess failed with exit code {e.returncode}.\nStderr: {e.stderr}\nStdout: {e.stdout}")
         
         # Parse output JSON
         stdout = result.stdout.strip()
