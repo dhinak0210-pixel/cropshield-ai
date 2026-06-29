@@ -31,6 +31,15 @@ def load_env():
             except Exception as e:
                 pass
 
+    # Try to load keys from Streamlit secrets if running inside streamlit
+    try:
+        import streamlit as st
+        for key in ["GROQ_API_KEY", "GEMINI_API_KEY", "HUGGINGFACE_TOKEN", "GROQ_MODEL", "GEMINI_MODEL"]:
+            if key in st.secrets and not os.environ.get(key):
+                os.environ[key] = str(st.secrets[key])
+    except Exception:
+        pass
+
 # Initialize environment keys
 load_env()
 
@@ -164,7 +173,7 @@ class LLMClient:
         except Exception as e:
             # Auto-fallback to simpler response
             print(f"⚠️  LLM error: {e}")
-            return self._fallback_response(prompt)
+            return self._fallback_response(prompt, e)
 
     def _groq_generate(
         self, prompt, system_prompt,
@@ -247,13 +256,12 @@ class LLMClient:
         )
         return response
 
-    def _fallback_response(self, prompt: str) -> str:
+    def _fallback_response(self, prompt: str, error: Exception) -> str:
         """Return helpful message if LLM fails"""
         return (
-            "I'm having trouble connecting to the AI service. "
-            "Please check your API key in the .env file "
-            "and ensure you have internet connection. "
-            "You can still use the disease detection feature!"
+            f"⚠️ **LLM Generation Error**: {str(error)}\n\n"
+            "Please verify that your API key is correct and you have not exceeded your rate limits. "
+            "You can configure your keys in the `.env` file or Streamlit/HuggingFace space secrets."
         )
 
 
@@ -322,28 +330,64 @@ Keep response under 200 words."""
 # ─── FACTORY FUNCTION ────────────────────────
 def get_llm_client(
     provider: Optional[str] = None
-) -> LLMClient:
+) -> Optional[LLMClient]:
     """
     Get LLM client based on available API keys
     Auto-selects best available option
     """
+    # Force reload of env or streamlit secrets to be safe
+    load_env()
 
     if provider:
-        return LLMClient(provider)
+        try:
+            return LLMClient(provider)
+        except Exception as e:
+            print(f"Failed to load requested LLM provider '{provider}': {e}")
+            return None
+
+    def is_valid_key(val: Optional[str], default_placeholder: str) -> bool:
+        if not val:
+            return False
+        val_strip = val.strip()
+        return val_strip != "" and val_strip != default_placeholder
 
     # Auto-select based on available keys
-    if os.getenv("GROQ_API_KEY") and os.getenv("GROQ_API_KEY") != "your_groq_api_key_here":
+    groq_key = os.getenv("GROQ_API_KEY")
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    hf_token = os.getenv("HUGGINGFACE_TOKEN")
+
+    if is_valid_key(groq_key, "your_groq_api_key_here"):
         print("🚀 Using Groq (fastest)")
-        return LLMClient("groq")
-    elif os.getenv("GEMINI_API_KEY") and os.getenv("GEMINI_API_KEY") != "your_gemini_api_key_here":
+        try:
+            return LLMClient("groq")
+        except Exception as e:
+            print(f"⚠️ Groq client initialization failed: {e}")
+
+    if is_valid_key(gemini_key, "your_gemini_api_key_here"):
         print("🔵 Using Gemini")
-        return LLMClient("gemini")
-    elif os.getenv("HUGGINGFACE_TOKEN"):
+        try:
+            return LLMClient("gemini")
+        except Exception as e:
+            print(f"⚠️ Gemini client initialization failed: {e}")
+
+    if is_valid_key(hf_token, "your_hf_token_here"):
         print("🤗 Using HuggingFace")
-        return LLMClient("huggingface")
-    else:
+        try:
+            return LLMClient("huggingface")
+        except Exception as e:
+            print(f"⚠️ HuggingFace client initialization failed: {e}")
+
+    # Fallback to local Ollama only if it is actually reachable
+    try:
+        import ollama
+        client = LLMClient("ollama")
+        client.client.list()
         print("💻 Using Ollama (local)")
-        return LLMClient("ollama")
+        return client
+    except Exception:
+        print("⚠️ Local Ollama not running or python package missing. LLM offline.")
+
+    return None
 
 
 # ─── BACKWARD COMPATIBILITY CLASS ────────────

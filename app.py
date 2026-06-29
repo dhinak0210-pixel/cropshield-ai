@@ -903,8 +903,8 @@ with st.sidebar:
     # AI Status
     st.markdown('<div class="sidebar-section">Intelligence Layer</div>', unsafe_allow_html=True)
     if llm:
-        provider = os.getenv("DEFAULT_LLM", "groq").upper()
-        st.markdown(f'<div class="status-pill status-online">AI Online &nbsp;&middot;&nbsp; {provider}</div>', unsafe_allow_html=True)
+        provider_name = getattr(llm, "provider", "groq").upper()
+        st.markdown(f'<div class="status-pill status-online">AI Online &nbsp;&middot;&nbsp; {provider_name}</div>', unsafe_allow_html=True)
     else:
         st.markdown('<div class="status-pill status-offline">AI Offline &mdash; Add API Key</div>', unsafe_allow_html=True)
 
