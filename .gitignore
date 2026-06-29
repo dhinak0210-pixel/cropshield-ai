@@ -15,13 +15,15 @@ ENV/
 .ipynb_checkpoints
 
 # Model files
-# **/*.h5
+**/*.h5
 **/*.keras
 **/*.tflite
 models/export/saved_model/
 models/variables/
 *.pt
 *.pth
+*.log
+
 
 # Dataset
 data/

@@ -69,6 +69,17 @@ from slowapi.errors import RateLimitExceeded
 from utils.preprocess import preprocess_image
 from utils.disease_info import get_disease_info, get_all_plants
 
+def get_model_target_size(model, default=(224, 224)):
+    try:
+        shape = model.input_shape
+        if isinstance(shape, list):
+            shape = shape[0]
+        if len(shape) == 4:
+            return (shape[1], shape[2])
+    except Exception:
+        pass
+    return default
+
 # --- 1. LOGGING SETUP ---
 logging.basicConfig(
     level=logging.INFO,
@@ -105,6 +116,16 @@ if not settings.MODEL_PATH:
 # --- 3. HELPER FUNCTIONS ---
 def get_class_names(num_classes: int = 38) -> List[str]:
     """Retrieves class names, falling back to standard PlantVillage classes."""
+    # 1. Try loading from model/class_indices.json if the length matches (Primary source of truth)
+    try:
+        if os.path.exists("model/class_indices.json"):
+            with open("model/class_indices.json") as f:
+                indices_dict = json.load(f)
+                if len(indices_dict) == num_classes:
+                    return [indices_dict[str(i)] for i in range(num_classes)]
+    except Exception:
+        pass
+
     standard_38_classes = [
         "Apple___Apple_scab", "Apple___Black_rot", "Apple___Cedar_apple_rust", "Apple___healthy",
         "Blueberry___healthy", "Cherry_(including_sour)___Powdery_mildew", "Cherry_(including_sour)___healthy",
@@ -365,7 +386,9 @@ async def predict(request: Request, file: UploadFile = File(...)):
         
     try:
         image_input = Image.open(io.BytesIO(content))
-        processed_img, _ = preprocess_image(image_input, validate_leaf=True)
+        model = model_state["model"]
+        target_size = get_model_target_size(model)
+        processed_img, _ = preprocess_image(image_input, target_size=target_size, validate_leaf=True)
         
         predictions = model_state["model"].predict(processed_img)[0]
         top_indices = np.argsort(predictions)[-5:][::-1]
@@ -471,7 +494,9 @@ async def predict_batch(request: Request, files: List[UploadFile] = File(...)):
                 raise ValueError("Inference model is offline.")
                 
             image_input = Image.open(io.BytesIO(content))
-            processed_img, _ = preprocess_image(image_input, validate_leaf=True)
+            model = model_state["model"]
+            target_size = get_model_target_size(model)
+            processed_img, _ = preprocess_image(image_input, target_size=target_size, validate_leaf=True)
             
             predictions = model_state["model"].predict(processed_img)[0]
             top_indices = np.argsort(predictions)[-5:][::-1]
@@ -595,7 +620,9 @@ async def predict_url(request: Request, body: PredictURLRequest):
             
         # Run inference
         image_input = Image.open(io.BytesIO(content))
-        processed_img, _ = preprocess_image(image_input, validate_leaf=True)
+        model = model_state["model"]
+        target_size = get_model_target_size(model)
+        processed_img, _ = preprocess_image(image_input, target_size=target_size, validate_leaf=True)
         
         predictions = model_state["model"].predict(processed_img)[0]
         top_indices = np.argsort(predictions)[-5:][::-1]

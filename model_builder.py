@@ -27,29 +27,41 @@ def _build_custom_head(
     dense_units_2: int = 256,
     dropout_rate_1: float = 0.5,
     dropout_rate_2: float = 0.3,
-    l2_reg: float = 0.001
+    l2_reg: float = 0.001,
+    preprocessing_layer = None
 ) -> Model:
     """
     Helper function to build a custom classification head on top of a base model.
     Allows adjusting dense units, dropouts, and L2 weight regularization constraints.
     """
-    x = base_model.output
-    x = GlobalAveragePooling2D()(x)
+    inputs = tf.keras.Input(shape=base_model.input_shape[1:])
+    x = inputs
+    if preprocessing_layer is not None:
+        x = preprocessing_layer(x)
+    
+    x = base_model(x)
+    gap = GlobalAveragePooling2D()(x)
+    gmp = tf.keras.layers.GlobalMaxPooling2D()(x)
+    x = tf.keras.layers.Concatenate()([gap, gmp])
     x = BatchNormalization()(x)
-    
-    kernel_regularizer = l2(l2_reg) if l2_reg > 0 else None
-    
-    x = Dense(dense_units_1, activation='relu', kernel_regularizer=kernel_regularizer)(x)
+    x = Dense(
+        dense_units_1,
+        activation='relu',
+        kernel_regularizer=l2(l2_reg),
+    )(x)
     x = Dropout(dropout_rate_1)(x)
     x = BatchNormalization()(x)
-    
-    x = Dense(dense_units_2, activation='relu', kernel_regularizer=kernel_regularizer)(x)
+    x = Dense(
+        dense_units_2,
+        activation='relu',
+        kernel_regularizer=l2(l2_reg),
+    )(x)
     x = Dropout(dropout_rate_2)(x)
+    predictions = Dense(num_classes, activation='softmax', dtype='float32')(x)
     
-    predictions = Dense(num_classes, activation='softmax')(x)
-    
-    model = Model(inputs=base_model.input, outputs=predictions)
+    model = Model(inputs=inputs, outputs=predictions)
     return model
+
 
 def build_mobilenetv2_model(
     num_classes: int, 
@@ -63,19 +75,6 @@ def build_mobilenetv2_model(
 ) -> Tuple[Model, Model]:
     """
     Builds a MobileNetV2 model for classification with configurable layer constraints.
-    
-    Args:
-        num_classes (int): Number of output classes.
-        img_size (int): Input image size (square).
-        dense_units_1 (int): Units in first dense layer.
-        dense_units_2 (int): Units in second dense layer.
-        dropout_rate_1 (float): Dropout probability for first layer.
-        dropout_rate_2 (float): Dropout probability for second layer.
-        l2_reg (float): L2 regularization factor.
-        learning_rate (float): Initial optimizer learning rate.
-        
-    Returns:
-        Tuple[Model, Model]: The complete compiled model and the base MobileNetV2 model.
     """
     try:
         logger.info(f"Building MobileNetV2 model for {num_classes} classes...")
@@ -85,6 +84,10 @@ def build_mobilenetv2_model(
         # Freeze base model
         base_model.trainable = False
         
+        # MobileNetV2 expects input in [-1, 1]. Since input is normalized to [0, 1],
+        # we scale by 2.0 and shift by -1.0.
+        preprocessing_layer = tf.keras.layers.Rescaling(scale=2.0, offset=-1.0)
+        
         model = _build_custom_head(
             base_model=base_model,
             num_classes=num_classes,
@@ -92,7 +95,8 @@ def build_mobilenetv2_model(
             dense_units_2=dense_units_2,
             dropout_rate_1=dropout_rate_1,
             dropout_rate_2=dropout_rate_2,
-            l2_reg=l2_reg
+            l2_reg=l2_reg,
+            preprocessing_layer=preprocessing_layer
         )
         
         model.compile(
@@ -120,19 +124,6 @@ def build_efficientnetb0_model(
 ) -> Tuple[Model, Model]:
     """
     Builds an EfficientNetB0 model for classification with configurable layer constraints.
-    
-    Args:
-        num_classes (int): Number of output classes.
-        img_size (int): Input image size (square).
-        dense_units_1 (int): Units in first dense layer.
-        dense_units_2 (int): Units in second dense layer.
-        dropout_rate_1 (float): Dropout probability for first layer.
-        dropout_rate_2 (float): Dropout probability for second layer.
-        l2_reg (float): L2 regularization factor.
-        learning_rate (float): Initial optimizer learning rate.
-        
-    Returns:
-        Tuple[Model, Model]: The complete compiled model and the base EfficientNetB0 model.
     """
     try:
         logger.info(f"Building EfficientNetB0 model for {num_classes} classes...")
@@ -142,6 +133,10 @@ def build_efficientnetb0_model(
         # Freeze base model
         base_model.trainable = False
         
+        # EfficientNet expects input in [0, 255] because it has internal rescaling.
+        # Since our generators rescale by 1./255, we rescale by 255.0 to restore it.
+        preprocessing_layer = tf.keras.layers.Rescaling(scale=255.0)
+        
         model = _build_custom_head(
             base_model=base_model,
             num_classes=num_classes,
@@ -149,7 +144,8 @@ def build_efficientnetb0_model(
             dense_units_2=dense_units_2,
             dropout_rate_1=dropout_rate_1,
             dropout_rate_2=dropout_rate_2,
-            l2_reg=l2_reg
+            l2_reg=l2_reg,
+            preprocessing_layer=preprocessing_layer
         )
         
         model.compile(
@@ -186,6 +182,10 @@ def build_efficientnetb3_model(
         # Freeze base model
         base_model.trainable = False
         
+        # EfficientNet expects input in [0, 255] because it has internal rescaling.
+        # Since our generators rescale by 1./255, we rescale by 255.0 to restore it.
+        preprocessing_layer = tf.keras.layers.Rescaling(scale=255.0)
+        
         model = _build_custom_head(
             base_model=base_model,
             num_classes=num_classes,
@@ -193,7 +193,8 @@ def build_efficientnetb3_model(
             dense_units_2=dense_units_2,
             dropout_rate_1=dropout_rate_1,
             dropout_rate_2=dropout_rate_2,
-            l2_reg=l2_reg
+            l2_reg=l2_reg,
+            preprocessing_layer=preprocessing_layer
         )
         
         model.compile(
@@ -230,6 +231,13 @@ def build_resnet50_model(
         # Freeze base model
         base_model.trainable = False
         
+        # ResNet50 expects BGR with ImageNet mean subtraction.
+        # We rescale back to [0, 255] and apply ResNet50's preprocess_input.
+        preprocessing_layer = tf.keras.Sequential([
+            tf.keras.layers.Rescaling(scale=255.0),
+            tf.keras.layers.Lambda(lambda img: tf.keras.applications.resnet50.preprocess_input(img))
+        ])
+        
         model = _build_custom_head(
             base_model=base_model,
             num_classes=num_classes,
@@ -237,7 +245,8 @@ def build_resnet50_model(
             dense_units_2=dense_units_2,
             dropout_rate_1=dropout_rate_1,
             dropout_rate_2=dropout_rate_2,
-            l2_reg=l2_reg
+            l2_reg=l2_reg,
+            preprocessing_layer=preprocessing_layer
         )
         
         model.compile(
@@ -377,17 +386,20 @@ def save_model_all_formats(model: Model, save_dir: str) -> None:
         logger.info(f"Saved SavedModel format: {saved_model_path} ({sm_size:.2f} MB)")
         
         # 3. Convert and save as TFLite
-        logger.info("Converting to TFLite format with DEFAULT optimization...")
-        converter = tf.lite.TFLiteConverter.from_keras_model(model)
-        converter.optimizations = [tf.lite.Optimize.DEFAULT]
-        tflite_model = converter.convert()
-        
-        tflite_path = os.path.join(save_dir, 'model.tflite')
-        with open(tflite_path, 'wb') as f:
-            f.write(tflite_model)
+        try:
+            logger.info("Converting to TFLite format with DEFAULT optimization...")
+            converter = tf.lite.TFLiteConverter.from_keras_model(model)
+            converter.optimizations = [tf.lite.Optimize.DEFAULT]
+            tflite_model = converter.convert()
             
-        tflite_size = os.path.getsize(tflite_path) / (1024 ** 2)
-        logger.info(f"Saved TFLite format: {tflite_path} ({tflite_size:.2f} MB)")
+            tflite_path = os.path.join(save_dir, 'model.tflite')
+            with open(tflite_path, 'wb') as f:
+                f.write(tflite_model)
+                
+            tflite_size = os.path.getsize(tflite_path) / (1024 ** 2)
+            logger.info(f"Saved TFLite format: {tflite_path} ({tflite_size:.2f} MB)")
+        except Exception as tflite_err:
+            logger.warning(f"Could not convert model to TFLite format: {str(tflite_err)}")
         
         logger.info("All model formats saved successfully.")
         
