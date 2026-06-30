@@ -29,7 +29,8 @@ import tensorflow as tf
 import numpy as np
 import json
 import os
-from PIL import Image
+from PIL import Image, ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 from dotenv import load_dotenv
 
 # Local imports
@@ -52,6 +53,30 @@ st.set_page_config(
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+/* ── Text Stability — prevent shaking/jitter during Streamlit re-runs ── */
+*, *::before, *::after {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeSpeed;
+    -webkit-text-size-adjust: 100%;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+/* Anchor all text layers so GPU compositing doesn't cause reflow jitter */
+p, span, h1, h2, h3, h4, h5, h6, div, li, label, a, button {
+    transform: translateZ(0);
+    will-change: auto;
+    letter-spacing: inherit;
+}
+/* Fix Streamlit's own markdown containers */
+[data-testid="stMarkdownContainer"],
+[data-testid="stText"],
+[data-testid="stCaptionContainer"],
+.element-container {
+    transform: translateZ(0);
+    -webkit-font-smoothing: antialiased;
+}
 
 /* ── Global Reset ── */
 html, body, [class*="css"] {
@@ -124,6 +149,9 @@ html, body, [class*="css"] {
     background: #00d496;
     box-shadow: 0 0 8px #00d496;
     animation: pulse 2s infinite;
+    will-change: opacity;
+    transform: translateZ(0);
+    flex-shrink: 0;
 }
 .status-offline {
     background: rgba(255,80,80,0.1);
