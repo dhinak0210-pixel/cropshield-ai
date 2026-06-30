@@ -37,7 +37,6 @@ from dotenv import load_dotenv
 from llm.llm_client import get_llm_client
 from llm.disease_advisor import PlantDiseaseAdvisor
 from llm.chat_handler import ChatHandler
-from utils import generate_pdf_report
 
 load_dotenv()
 
@@ -1319,8 +1318,7 @@ if image is not None:
             # Initialize session state for cached reports to prevent reset during download reruns
             if "clinical_report" not in st.session_state:
                 st.session_state.clinical_report = None
-            if "clinical_report_pdf" not in st.session_state:
-                st.session_state.clinical_report_pdf = None
+
             if "clinical_report_disease" not in st.session_state:
                 st.session_state.clinical_report_disease = None
 
@@ -1328,7 +1326,6 @@ if image is not None:
             current_report_key = f"{plant_name}_{disease}_{confidence:.2f}_{severity}"
             if st.session_state.clinical_report_disease != current_report_key:
                 st.session_state.clinical_report = None
-                st.session_state.clinical_report_pdf = None
                 st.session_state.clinical_report_disease = current_report_key
 
             if st.button(
@@ -1347,19 +1344,7 @@ if image is not None:
                     )
                     st.session_state.clinical_report = report
                     
-                    # Generate PDF bytes dynamically
-                    try:
-                        pdf_bytes = generate_pdf_report(
-                            report_text=report,
-                            plant_name=plant_name,
-                            disease_name=disease,
-                            confidence=confidence,
-                            severity=severity
-                        )
-                        st.session_state.clinical_report_pdf = pdf_bytes
-                    except Exception as e:
-                        st.error(f"Error compiling PDF: {str(e)}")
-                        st.session_state.clinical_report_pdf = None
+
 
             if st.session_state.clinical_report:
                 st.markdown(
@@ -1368,29 +1353,6 @@ if image is not None:
                     unsafe_allow_html=True
                 )
 
-                # Split download buttons into elegant side-by-side columns
-                col_pdf, col_txt = st.columns(2)
-                
-                with col_pdf:
-                    if st.session_state.clinical_report_pdf:
-                        st.download_button(
-                            label="Download Clinical Report (PDF)",
-                            data=st.session_state.clinical_report_pdf,
-                            file_name=f"{plant_name.replace(' ', '_')}_{disease.replace(' ', '_')}_report.pdf",
-                            mime="application/pdf",
-                            use_container_width=True
-                        )
-                    else:
-                        st.button("PDF Format Unavailable", disabled=True, use_container_width=True)
-
-                with col_txt:
-                    st.download_button(
-                        label="Download Clinical Report (.txt)",
-                        data=st.session_state.clinical_report,
-                        file_name=f"{plant_name.replace(' ', '_')}_{disease.replace(' ', '_')}_report.txt",
-                        mime="text/plain",
-                        use_container_width=True
-                    )
 
         # TAB 5: Chat with AI
         with tab5:
